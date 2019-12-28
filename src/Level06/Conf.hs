@@ -7,11 +7,14 @@ module Level06.Conf
 import           GHC.Word                 (Word16)
 
 import           Data.Bifunctor           (first)
+import           Data.Maybe               (maybe)
 import           Data.Monoid              ((<>))
+import           Data.Semigroup           (Last (..))
 
-import           Level06.AppM             (AppM)
-import           Level06.Types            (Conf, ConfigError,
-                                           DBFilePath (DBFilePath), PartialConf,
+import           Level06.AppM             (AppM, liftEither)
+import           Control.Monad.IO.Class   (liftIO)
+import           Level06.Types            (Conf (Conf), ConfigError (..),
+                                           DBFilePath (DBFilePath), PartialConf (..),
                                            Port (Port))
 
 import           Level06.Conf.CommandLine (commandLineParser)
@@ -22,8 +25,7 @@ import           Level06.Conf.File        (parseJSONConfigFile)
 -- configuration values from either the file or command line inputs.
 defaultConf
   :: PartialConf
-defaultConf =
-  error "defaultConf not implemented"
+defaultConf = PartialConf (Just . Last $ Port 3000) (Just . Last $ DBFilePath "conf.json")
 
 -- | We need something that will take our PartialConf and see if can finally build
 -- a complete ``Conf`` record. Also we need to highlight any missing values by
@@ -31,8 +33,10 @@ defaultConf =
 makeConfig
   :: PartialConf
   -> Either ConfigError Conf
-makeConfig =
-  error "makeConfig not implemented"
+makeConfig pc = do
+  port <- maybe (Left NoPort) (Right . getLast) (pcPort pc)
+  dbFilePath <- maybe (Left NoDbFile) (Right . getLast) (pcDBFilePath  pc)
+  pure $ Conf port dbFilePath
 
 -- | This is the function we'll actually export for building our configuration.
 -- Since it wraps all our efforts to read information from the command line, and
@@ -47,9 +51,12 @@ makeConfig =
 parseOptions
   :: FilePath
   -> AppM ConfigError Conf
-parseOptions =
+parseOptions fp = do
+  filePc <- parseJSONConfigFile fp
+  cliPc <- liftIO commandLineParser
   -- Parse the options from the config file: "files/appconfig.json"
   -- Parse the options from the commandline using 'commandLineParser'
   -- Combine these with the default configuration 'defaultConf'
   -- Return the final configuration value
-  error "parseOptions not implemented"
+  liftEither . makeConfig $ defaultConf <> filePc <> cliPc
+  
