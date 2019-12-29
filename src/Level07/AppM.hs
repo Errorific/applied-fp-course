@@ -8,6 +8,7 @@ module Level07.AppM
   , Env (..)
   , liftEither
   , runApp
+  , envLog
   ) where
 
 import           Control.Monad.Except   (MonadError (..))
@@ -35,6 +36,9 @@ data Env = Env
   , envDB        :: FirstAppDB
   }
 
+envLog :: Text -> App ()
+envLog = liftIO . print
+
 -- | It would be nice to remove the need to pass around our Env to every
 -- function that needs it. Wouldn't it be great to have our functions run where
 -- we could simply ask for the current Env?
@@ -59,46 +63,51 @@ newtype AppM e a = AppM
 type App = AppM Error
 
 runApp :: App a -> Env -> IO (Either Error a)
-runApp = error "runAppM not implemented"
+runApp = runAppM
 
 instance Applicative (AppM e) where
   pure :: a -> AppM e a
-  pure = error "pure for AppM e not implemented"
+  pure = AppM . pure . pure . pure
 
   (<*>) :: AppM e (a -> b) -> AppM e a -> AppM e b
-  (<*>) = error "spaceship for AppM e not implemented"
+  (<*>) (AppM iof) (AppM ioa) = AppM (\e -> 
+    do
+      f <- iof e
+      a <- ioa e
+      pure $ f <*> a
+    )
 
 instance Monad (AppM e) where
   -- | When it comes to running functions in (AppM e) as a Monad, this will take
   -- care of passing the Env from one function to the next whilst preserving the
   -- error handling behaviour.
   (>>=) :: AppM e a -> (a -> AppM e b) -> AppM e b
-  (>>=) = error "bind for AppM e not implemented"
+  (>>=) (AppM a) f = AppM (\env -> a env >>= either (pure . Left) (\x -> (runAppM $ f x) env))
 
 instance MonadError e (AppM e) where
   throwError :: e -> AppM e a
-  throwError = error "throwError for AppM e not implemented"
+  throwError = AppM . pure . pure . Left
 
   catchError :: AppM e a -> (e -> AppM e a) -> AppM e a
-  catchError = error "catchError for AppM e not implemented"
+  catchError (AppM a) r = AppM (\env -> a env >>= either (\x -> (runAppM $ r x) env) (pure . pure))
 
 instance MonadReader Env (AppM e) where
   -- Return the current Env from the AppM.
   ask :: AppM e Env
-  ask = error "ask for AppM e not implemented"
+  ask = AppM (pure . Right)
 
   -- Run a (AppM e) inside of the current one using a modified Env value.
   local :: (Env -> Env) -> AppM e a -> AppM e a
-  local = error "local for AppM e not implemented"
+  local f a = AppM (runAppM a . f)
 
   -- This will run a function on the current Env and return the result.
   reader :: (Env -> a) -> AppM e a
-  reader = error "reader for AppM e not implemented"
+  reader f = AppM (pure . pure . f)
 
 instance MonadIO (AppM e) where
   -- Take a type of 'IO a' and lift it into our (AppM e).
   liftIO :: IO a -> AppM e a
-  liftIO = error "liftIO for AppM not implemented"
+  liftIO = (AppM . const) . (Right <$>)
 
 -- | This is a helper function that will `lift` an Either value into our new AppM
 -- by applying `throwError` to the Left value, and using `pure` to lift the
@@ -108,6 +117,6 @@ instance MonadIO (AppM e) where
 -- pure :: Applicative m => a -> m a
 --
 liftEither :: Either e a -> AppM e a
-liftEither = error "throwLeft not implemented"
+liftEither = (AppM . const) . pure 
 
 -- Move on to ``src/Level07/DB.hs`` after this
